@@ -55,6 +55,9 @@
   .go{width:100%;padding:13px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font:600 15px system-ui;cursor:pointer}
   .go:disabled{opacity:.55;cursor:wait}
   #status{margin-top:12px;font-size:14px;min-height:20px}
+  #resultats button{display:block;width:100%;text-align:left;margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);font:13px system-ui;cursor:pointer}
+  #resultats button:hover{border-color:var(--accent)}
+  #resultats small{color:var(--muted)}
   .ok{color:var(--ok)} .err{color:var(--err)}
   details{margin-top:18px;font-size:13px;color:var(--muted)}
   details input{margin-top:4px}
@@ -104,6 +107,15 @@
     <form id="f" novalidate>
       <fieldset>
         <legend id="legendClient">Client</legend>
+        <div style="margin-bottom:12px">
+          <label for="recherche">Retrouver un client (nom, prénom ou email)</label>
+          <div style="display:flex;gap:6px">
+            <input id="recherche" autocomplete="off" placeholder="ex. Anaïs Bouzegaoui ou anais@mail.fr">
+            <button type="button" id="chercher" style="padding:0 14px;border:1px solid var(--line);border-radius:9px;background:var(--soft);color:var(--ink);cursor:pointer;font:600 13px system-ui">Chercher</button>
+          </div>
+          <div class="hint" id="chercherStatus">Email : Systeme.io + registre Notion. Nom : registre Notion (clients déjà facturés).</div>
+          <div id="resultats"></div>
+        </div>
         <div class="grid">
           <div class="full"><label style="display:flex;gap:8px;align-items:center;font-size:14px">
             <input type="checkbox" id="estSociete" style="width:auto"> <span id="societeLabel">Facturer à une société</span></label></div>
@@ -172,6 +184,7 @@
       </label>
       <button class="go" id="go" type="submit">Valider et télécharger le PDF</button>
       <div id="status" role="status"></div>
+      <button type="button" id="partager" style="display:none;margin-top:10px;width:100%;padding:11px;border:1px solid var(--accent);border-radius:10px;background:transparent;color:var(--accent);font:600 14px system-ui;cursor:pointer">Partager le PDF (Slack, WhatsApp, mail…)</button>
     </form>
 
     <details>
@@ -181,6 +194,8 @@
       <div class="hint">Mémorisée dans ce navigateur. Le webhook attribue le numéro et crée la ligne dans Notion.</div>
       <label for="hookEnvoi" style="margin-top:12px">URL du webhook d'envoi email (production)</label>
       <input id="hookEnvoi" placeholder="https://…/webhook/yougc-envoi">
+      <label for="hookContact" style="margin-top:12px">URL du webhook recherche contact Systeme.io</label>
+      <input id="hookContact" placeholder="https://…/webhook/yougc-contact">
       <label for="cle" style="margin-top:12px">Clé d'accès</label>
       <input id="cle" type="password" placeholder="la même que dans n8n" autocomplete="off">
       <div class="hint">Mémorisée dans ce navigateur. Sans elle, n8n refuse de créer un numéro.</div>
@@ -227,6 +242,7 @@ const VALIDITE_DEVIS_JOURS = 30;
 // URLs de PRODUCTION des webhooks n8n : colle-les ici pour ne plus jamais les ressaisir
 const DEFAULT_WEBHOOK = "";        // ex. "https://xxx.app.n8n.cloud/webhook/yougc-numero"
 const DEFAULT_WEBHOOK_ENVOI = "";  // ex. "https://xxx.app.n8n.cloud/webhook/yougc-envoi"
+const DEFAULT_WEBHOOK_CONTACT = ""; // ex. "https://xxx.app.n8n.cloud/webhook/yougc-contact"
 /* ========================================================== */
 
 const $ = id => document.getElementById(id);
@@ -503,10 +519,58 @@ $("hook").value = store.get("yougc_hook") || DEFAULT_WEBHOOK;
 $("hook").addEventListener("input", e => store.set("yougc_hook", e.target.value.trim()));
 $("hookEnvoi").value = store.get("yougc_hook_envoi") || DEFAULT_WEBHOOK_ENVOI;
 $("hookEnvoi").addEventListener("input", e => store.set("yougc_hook_envoi", e.target.value.trim()));
+$("hookContact").value = store.get("yougc_hook_contact") || DEFAULT_WEBHOOK_CONTACT;
+$("hookContact").addEventListener("input", e => store.set("yougc_hook_contact", e.target.value.trim()));
+
+/* ---------- Retrouver un client (Systeme.io + registre Notion, via n8n) ---------- */
+function appliquerClient(c){
+  const champs = { prenom: c.prenom, nom: c.nom, email: c.email, telephone: c.telephone, adresse: c.adresse, cp: c.cp, ville: c.ville };
+  for(const [id, v] of Object.entries(champs)) $(id).value = v || "";
+  $("estSociete").checked = !!c.societe; $("estSociete").dispatchEvent(new Event("change"));
+  $("societe").value = c.societe || ""; $("siret").value = c.siret || ""; $("tva").value = c.tva || "";
+  $("resultats").innerHTML = "";
+  $("chercherStatus").textContent = "Pré-rempli depuis " + c.source + ". Vérifie avant de valider.";
+  $("chercherStatus").className = "hint ok";
+  refresh();
+}
+async function chercherClient(){
+  const q = $("recherche").value.trim(), hook = $("hookContact").value.trim(), out = $("chercherStatus");
+  const dire = (m, c) => { out.textContent = m; out.className = "hint " + (c || ""); };
+  $("resultats").innerHTML = "";
+  if(q.length < 2) return dire("Tape au moins 2 caractères.", "err");
+  if(!hook){ document.querySelector("details").open = true; return dire("Renseigne l'URL du webhook recherche contact dans Réglages.", "err"); }
+  $("chercher").disabled = true; dire("Recherche…");
+  try{
+    const r = await fetch(hook, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ cle: $("cle").value.trim(), q }) });
+    if(!r.ok) throw new Error("n8n a répondu " + r.status);
+    const res = (await r.json()).resultats || [];
+    if(!res.length) return dire("Aucun client trouvé : saisie manuelle.");
+    if(res.length === 1) return appliquerClient(res[0]);
+    dire(res.length + " clients trouvés, choisis le bon :");
+    res.forEach(c => {
+      const btn = document.createElement("button"); btn.type = "button";
+      const nomAff = c.societe || [c.prenom, c.nom].filter(Boolean).join(" ") || c.email;
+      btn.innerHTML = `<b>${esc(nomAff)}</b> <small>${esc(c.email || "")} · ${esc(c.source)}</small>`;
+      btn.addEventListener("click", () => appliquerClient(c));
+      $("resultats").appendChild(btn);
+    });
+  }catch(err){ dire("Recherche impossible (" + err.message + ").", "err"); }
+  finally{ $("chercher").disabled = false; }
+}
+$("chercher").addEventListener("click", chercherClient);
+$("recherche").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); chercherClient(); } });
 $("cle").value = store.get("yougc_cle") || "";
 $("cle").addEventListener("input", e => store.set("yougc_cle", e.target.value.trim()));
 window.addEventListener("resize", fit);
 refresh();
+
+/* ---------- Partage du dernier PDF (menu de partage du système) ---------- */
+let dernierPdf = null;
+$("partager").addEventListener("click", async () => {
+  if(!dernierPdf) return;
+  try{ await navigator.share({ files: [dernierPdf], title: dernierPdf.name }); }
+  catch(err){ if(err.name !== "AbortError") status("Partage impossible sur ce navigateur : utilise le PDF téléchargé.", "err"); }
+});
 
 /* ---------- Validation, numéro, PDF ---------- */
 function status(msg, cls){ $("status").textContent = msg; $("status").className = cls || ""; }
@@ -528,7 +592,7 @@ $("f").addEventListener("submit", async e => {
   const envoi = $("envoi").checked, robin = d.mode !== "recu" && $("robin").checked, hookEnvoi = $("hookEnvoi").value.trim();
   if((envoi || robin) && !hookEnvoi){ status("Renseigne l'URL du webhook d'envoi dans Réglages, ou décoche l'envoi et Robin.", "err"); document.querySelector("details").open = true; return; }
 
-  $("go").disabled = true;
+  $("go").disabled = true; $("partager").style.display = "none"; dernierPdf = null;
   let numero = force, pageId = "";
   if(!force) try{
     status("Attribution du numéro…");
@@ -559,22 +623,26 @@ $("f").addEventListener("submit", async e => {
     const a = document.createElement("a"); a.href = URL.createObjectURL(blob); a.download = fileName;
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
     const libelle = ({ devis: "Devis ", facture: "Facture ", recu: "Reçu " }[d.mode]) + numero;
+    try{
+      const f = new File([blob], fileName, { type: "application/pdf" });
+      if(navigator.canShare && navigator.canShare({ files: [f] })){ dernierPdf = f; $("partager").style.display = "block"; }
+    }catch(e){}
 
-    if(!envoi && !robin){ status(libelle + " téléchargé(e). Non envoyé(e).", "ok"); }
+    if(!hookEnvoi){ status(libelle + " téléchargé(e)." + (envoi || robin ? "" : " Non envoyé(e)."), "ok"); }
     else{
-      const cibles = [envoi ? d.email : "", robin ? "Slack #team-finances" : ""].filter(Boolean).join(" + ");
-      status(libelle + " téléchargé(e). Envoi à " + cibles + "…");
+      const cibles = [envoi ? d.email : "", robin ? "Slack #team-finances" : "", pageId ? "Notion" : ""].filter(Boolean).join(" + ");
+      status(libelle + " téléchargé(e). Envoi : " + cibles + "…");
       const pdfBase64 = await new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1]); fr.onerror = ko; fr.readAsDataURL(blob); });
       try{
         const r2 = await fetch(hookEnvoi, { method:"POST", headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ cle: $("cle").value.trim(), mode: d.mode, numero, pageId, envoyerClient: envoi, robin,
+          body: JSON.stringify({ cle: $("cle").value.trim(), mode: d.mode, numero, pageId, envoyerClient: envoi, robin, archiver: true,
                                  prenom: d.prenom, nom: d.nom, societe: d.societe, email: d.email,
                                  formation: d.formation, echeance: d.echeance, description: description(d), nature: d.nature,
                                  montant: d.montant, validite: d.validite, note: d.note, fileName, pdfBase64 }) });
         if(!r2.ok) throw new Error("n8n a répondu " + r2.status);
-        status(libelle + " téléchargé(e) et envoyé(e) : " + cibles + ".", "ok");
+        status(libelle + " téléchargé(e). Fait : " + cibles + ".", "ok");
       }catch(err){
-        status(libelle + " téléchargé(e), mais l'envoi a échoué (" + err.message + "). Envoie le PDF manuellement.", "err");
+        status(libelle + " téléchargé(e), mais l'envoi / archivage a échoué (" + err.message + ")." + (envoi ? " Envoie le PDF manuellement." : ""), "err");
       }
     }
   }catch(err){
