@@ -55,6 +55,20 @@
   .go{width:100%;padding:13px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font:600 15px system-ui;cursor:pointer}
   .go:disabled{opacity:.55;cursor:wait}
   #status{margin-top:12px;font-size:14px;min-height:20px}
+  #confirm{position:fixed;inset:0;background:rgba(20,12,16,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
+  #confirm.open{display:flex}
+  #confirm .box{background:var(--card);color:var(--ink);border-radius:16px;max-width:440px;width:100%;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
+  #confirm h3{margin:0 0 4px;font-size:18px}
+  #confirm .warn{color:var(--accent);font-weight:600;margin:0 0 14px}
+  #confirm ul{margin:0 0 14px;padding-left:18px}
+  #confirm li{margin:6px 0;list-style:none}
+  #confirm li label{display:flex;gap:8px;align-items:center;cursor:pointer}
+  #confirm li input{width:auto}
+  #confirm .recap{background:var(--bg);border:1px solid var(--line);border-radius:10px;padding:10px 12px;font-size:14px;margin-bottom:16px}
+  #confirm .btns{display:flex;gap:10px}
+  #confirm .btns button{flex:1;padding:12px;border-radius:10px;font:600 15px system-ui;cursor:pointer}
+  #confirmOk{border:0;background:var(--accent);color:var(--accent-ink)}
+  #confirmKo{border:1px solid var(--line);background:transparent;color:var(--ink)}
   #resultats button{display:block;width:100%;text-align:left;margin-top:6px;padding:8px 10px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);font:13px system-ui;cursor:pointer}
   #resultats button:hover{border-color:var(--accent)}
   #resultats small{color:var(--muted)}
@@ -522,6 +536,13 @@ $("hookEnvoi").addEventListener("input", e => store.set("yougc_hook_envoi", e.ta
 $("hookContact").value = store.get("yougc_hook_contact") || DEFAULT_WEBHOOK_CONTACT;
 $("hookContact").addEventListener("input", e => store.set("yougc_hook_contact", e.target.value.trim()));
 
+/* Lit la réponse n8n ; si elle est vide, c'est que le workflow s'est arrêté avant son bloc « Répondre » */
+async function lireJson(r, nomWorkflow){
+  const t = await r.text();
+  if(!t.trim()) throw new Error(`le workflow « ${nomWorkflow} » s'est arrêté avant de répondre : ouvre ses Executions dans n8n et regarde le bloc en rouge (souvent la clé)`);
+  try{ return JSON.parse(t); }catch(e){ throw new Error("réponse n8n illisible : " + t.slice(0, 120)); }
+}
+
 /* ---------- Retrouver un client (Systeme.io + registre Notion, via n8n) ---------- */
 function appliquerClient(c){
   const champs = { prenom: c.prenom, nom: c.nom, email: c.email, telephone: c.telephone, adresse: c.adresse, cp: c.cp, ville: c.ville };
@@ -543,7 +564,7 @@ async function chercherClient(){
   try{
     const r = await fetch(hook, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ cle: $("cle").value.trim(), q }) });
     if(!r.ok) throw new Error("n8n a répondu " + r.status);
-    const res = (await r.json()).resultats || [];
+    const res = (await lireJson(r, "Recherche client")).resultats || [];
     if(!res.length) return dire("Aucun client trouvé : saisie manuelle.");
     if(res.length === 1) return appliquerClient(res[0]);
     dire(res.length + " clients trouvés, choisis le bon :");
@@ -563,6 +584,33 @@ $("cle").value = store.get("yougc_cle") || "";
 $("cle").addEventListener("input", e => store.set("yougc_cle", e.target.value.trim()));
 window.addEventListener("resize", fit);
 refresh();
+
+/* ---------- Fenêtre de confirmation avant envoi (destinataires décochables) ---------- */
+function confirmer(d, envoi, robin){
+  const nomDoc = { devis: "ce devis", facture: "cette facture", recu: "ce reçu" }[d.mode];
+  const qui = d.societe || [d.prenom, d.nom].filter(Boolean).join(" ");
+  const dest = [];
+  if(envoi) dest.push(`<li><label><input type="checkbox" id="cfClient" checked><span>au ${d.mode === "recu" ? "prestataire" : "client"} : <b>${esc(d.email)}</b></span></label></li>`);
+  if(robin) dest.push(`<li><label><input type="checkbox" id="cfRobin" checked><span>à <b>Robin</b>, via Slack #team-finances</span></label></li>`);
+  $("confirmRecap").innerHTML = `<b>${esc(qui)}</b><br>${esc(description(d))}<br><b>${euro(d.montant)}</b>`;
+  $("confirmListe").innerHTML = dest.join("");
+  const maj = () => {
+    const c = $("cfClient") ? $("cfClient").checked : false, r = $("cfRobin") ? $("cfRobin").checked : false;
+    const cibles = [c ? (d.mode === "recu" ? "au prestataire" : (d.prenom ? "à " + d.prenom : "au client")) : "", r ? "à Robin" : ""].filter(Boolean).join(" mais aussi ");
+    $("confirmWarn").textContent = cibles ? `Attention, tu t'apprêtes à envoyer ${nomDoc} ${cibles}.` : `Aucun envoi : ${nomDoc} sera seulement généré et archivé.`;
+    $("confirmOk").textContent = cibles ? "Confirmer et envoyer" : "Générer sans envoyer";
+  };
+  $("confirmListe").querySelectorAll("input").forEach(i => i.addEventListener("change", maj));
+  maj();
+  $("confirm").classList.add("open"); $("confirmOk").focus();
+  return new Promise(ok => {
+    const fin = v => { $("confirm").classList.remove("open"); $("confirmOk").onclick = $("confirmKo").onclick = null; document.removeEventListener("keydown", esc_); ok(v); };
+    const esc_ = e => { if(e.key === "Escape") fin(null); };
+    $("confirmOk").onclick = () => fin({ envoi: $("cfClient") ? $("cfClient").checked : false, robin: $("cfRobin") ? $("cfRobin").checked : false });
+    $("confirmKo").onclick = () => fin(null);
+    document.addEventListener("keydown", esc_);
+  });
+}
 
 /* ---------- Partage du dernier PDF (menu de partage du système) ---------- */
 let dernierPdf = null;
@@ -589,8 +637,15 @@ $("f").addEventListener("submit", async e => {
   const hook = $("hook").value.trim();
   if(!force && !hook){ status("Renseigne l'URL du webhook dans Réglages.", "err"); document.querySelector("details").open = true; return; }
 
-  const envoi = $("envoi").checked, robin = d.mode !== "recu" && $("robin").checked, hookEnvoi = $("hookEnvoi").value.trim();
+  let envoi = $("envoi").checked, robin = d.mode !== "recu" && $("robin").checked;
+  const hookEnvoi = $("hookEnvoi").value.trim();
   if((envoi || robin) && !hookEnvoi){ status("Renseigne l'URL du webhook d'envoi dans Réglages, ou décoche l'envoi et Robin.", "err"); document.querySelector("details").open = true; return; }
+  if(envoi || robin){
+    const choix = await confirmer(d, envoi, robin);
+    if(!choix){ status("Envoi annulé : rien n'a été créé. Modifie puis valide à nouveau."); return; }
+    envoi = choix.envoi; robin = choix.robin;
+    $("envoi").checked = envoi; $("robin").checked = robin;
+  }
 
   $("go").disabled = true; $("partager").style.display = "none"; dernierPdf = null;
   let numero = force, pageId = "";
@@ -598,7 +653,7 @@ $("f").addEventListener("submit", async e => {
     status("Attribution du numéro…");
     const r = await fetch(hook, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ ...d, description: description(d), cle: $("cle").value.trim() }) });
     if(!r.ok) throw new Error("n8n a répondu " + r.status);
-    const rep = await r.json();
+    const rep = await lireJson(r, "Numéro devis/facture");
     numero = rep.numero; pageId = rep.pageId || "";
     if(!numero) throw new Error("aucun numéro renvoyé");
   }catch(err){
@@ -652,5 +707,17 @@ $("f").addEventListener("submit", async e => {
   }
 });
 </script>
+<div id="confirm" role="dialog" aria-modal="true" aria-labelledby="confirmTitre">
+  <div class="box">
+    <h3 id="confirmTitre">Confirmer l'envoi</h3>
+    <p class="warn" id="confirmWarn"></p>
+    <div class="recap" id="confirmRecap"></div>
+    <ul id="confirmListe"></ul>
+    <div class="btns">
+      <button type="button" id="confirmKo">Modifier</button>
+      <button type="button" id="confirmOk">Confirmer et envoyer</button>
+    </div>
+  </div>
+</div>
 </body>
 </html>
