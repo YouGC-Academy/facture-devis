@@ -192,6 +192,10 @@
         <input type="checkbox" id="envoi" checked style="width:auto">
         <span id="envoiLabel">Envoyer la facture au client par email</span>
       </label>
+      <label class="only-devis" style="margin:0 0 12px;font-size:14px">
+        <span style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="closing" checked style="width:auto">
+        <span>Confirmer sur Slack #closing-demande-devis</span></span>
+      </label>
       <label class="no-recu" style="display:flex;gap:8px;align-items:center;margin:0 0 12px;font-size:14px">
         <input type="checkbox" id="robin" style="width:auto">
         <span>Dossier Robin : poster le PDF dans Slack #team-finances</span>
@@ -586,17 +590,18 @@ window.addEventListener("resize", fit);
 refresh();
 
 /* ---------- Fenêtre de confirmation avant envoi (destinataires décochables) ---------- */
-function confirmer(d, envoi, robin){
+function confirmer(d, envoi, robin, closing){
   const nomDoc = { devis: "ce devis", facture: "cette facture", recu: "ce reçu" }[d.mode];
   const qui = d.societe || [d.prenom, d.nom].filter(Boolean).join(" ");
   const dest = [];
   if(envoi) dest.push(`<li><label><input type="checkbox" id="cfClient" checked><span>au ${d.mode === "recu" ? "prestataire" : "client"} : <b>${esc(d.email)}</b></span></label></li>`);
   if(robin) dest.push(`<li><label><input type="checkbox" id="cfRobin" checked><span>à <b>Robin</b>, via Slack #team-finances</span></label></li>`);
+  if(closing) dest.push(`<li><label><input type="checkbox" id="cfClosing" checked><span>confirmation sur Slack <b>#closing-demande-devis</b></span></label></li>`);
   $("confirmRecap").innerHTML = `<b>${esc(qui)}</b><br>${esc(description(d))}<br><b>${euro(d.montant)}</b>`;
   $("confirmListe").innerHTML = dest.join("");
   const maj = () => {
-    const c = $("cfClient") ? $("cfClient").checked : false, r = $("cfRobin") ? $("cfRobin").checked : false;
-    const cibles = [c ? (d.mode === "recu" ? "au prestataire" : (d.prenom ? "à " + d.prenom : "au client")) : "", r ? "à Robin" : ""].filter(Boolean).join(" mais aussi ");
+    const c = $("cfClient") ? $("cfClient").checked : false, r = $("cfRobin") ? $("cfRobin").checked : false, k = $("cfClosing") ? $("cfClosing").checked : false;
+    const cibles = [c ? (d.mode === "recu" ? "au prestataire" : (d.prenom ? "à " + d.prenom : "au client")) : "", r ? "à Robin" : "", k ? "sur #closing-demande-devis" : ""].filter(Boolean).join(" mais aussi ");
     $("confirmWarn").textContent = cibles ? `Attention, tu t'apprêtes à envoyer ${nomDoc} ${cibles}.` : `Aucun envoi : ${nomDoc} sera seulement généré et archivé.`;
     $("confirmOk").textContent = cibles ? "Confirmer et envoyer" : "Générer sans envoyer";
   };
@@ -606,7 +611,7 @@ function confirmer(d, envoi, robin){
   return new Promise(ok => {
     const fin = v => { $("confirm").classList.remove("open"); $("confirmOk").onclick = $("confirmKo").onclick = null; document.removeEventListener("keydown", esc_); ok(v); };
     const esc_ = e => { if(e.key === "Escape") fin(null); };
-    $("confirmOk").onclick = () => fin({ envoi: $("cfClient") ? $("cfClient").checked : false, robin: $("cfRobin") ? $("cfRobin").checked : false });
+    $("confirmOk").onclick = () => fin({ envoi: $("cfClient") ? $("cfClient").checked : false, robin: $("cfRobin") ? $("cfRobin").checked : false, closing: $("cfClosing") ? $("cfClosing").checked : false });
     $("confirmKo").onclick = () => fin(null);
     document.addEventListener("keydown", esc_);
   });
@@ -637,14 +642,14 @@ $("f").addEventListener("submit", async e => {
   const hook = $("hook").value.trim();
   if(!force && !hook){ status("Renseigne l'URL du webhook dans Réglages.", "err"); document.querySelector("details").open = true; return; }
 
-  let envoi = $("envoi").checked, robin = d.mode !== "recu" && $("robin").checked;
+  let envoi = $("envoi").checked, robin = d.mode !== "recu" && $("robin").checked, closing = d.mode === "devis" && $("closing").checked;
   const hookEnvoi = $("hookEnvoi").value.trim();
-  if((envoi || robin) && !hookEnvoi){ status("Renseigne l'URL du webhook d'envoi dans Réglages, ou décoche l'envoi et Robin.", "err"); document.querySelector("details").open = true; return; }
-  if(envoi || robin){
-    const choix = await confirmer(d, envoi, robin);
+  if((envoi || robin || closing) && !hookEnvoi){ status("Renseigne l'URL du webhook d'envoi dans Réglages, ou décoche l'envoi et Robin.", "err"); document.querySelector("details").open = true; return; }
+  if(envoi || robin || closing){
+    const choix = await confirmer(d, envoi, robin, closing);
     if(!choix){ status("Envoi annulé : rien n'a été créé. Modifie puis valide à nouveau."); return; }
-    envoi = choix.envoi; robin = choix.robin;
-    $("envoi").checked = envoi; $("robin").checked = robin;
+    envoi = choix.envoi; robin = choix.robin; closing = choix.closing;
+    $("envoi").checked = envoi; $("robin").checked = robin; $("closing").checked = closing;
   }
 
   $("go").disabled = true; $("partager").style.display = "none"; dernierPdf = null;
@@ -683,14 +688,14 @@ $("f").addEventListener("submit", async e => {
       if(navigator.canShare && navigator.canShare({ files: [f] })){ dernierPdf = f; $("partager").style.display = "block"; }
     }catch(e){}
 
-    if(!hookEnvoi){ status(libelle + " téléchargé(e)." + (envoi || robin ? "" : " Non envoyé(e)."), "ok"); }
+    if(!hookEnvoi){ status(libelle + " téléchargé(e)." + (envoi || robin || closing ? "" : " Non envoyé(e)."), "ok"); }
     else{
-      const cibles = [envoi ? d.email : "", robin ? "Slack #team-finances" : "", pageId ? "Notion" : ""].filter(Boolean).join(" + ");
+      const cibles = [envoi ? d.email : "", robin ? "Slack #team-finances" : "", closing ? "Slack #closing-demande-devis" : "", pageId ? "Notion" : ""].filter(Boolean).join(" + ");
       status(libelle + " téléchargé(e). Envoi : " + cibles + "…");
       const pdfBase64 = await new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1]); fr.onerror = ko; fr.readAsDataURL(blob); });
       try{
         const r2 = await fetch(hookEnvoi, { method:"POST", headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ cle: $("cle").value.trim(), mode: d.mode, numero, pageId, envoyerClient: envoi, robin, archiver: true,
+          body: JSON.stringify({ cle: $("cle").value.trim(), mode: d.mode, numero, pageId, envoyerClient: envoi, robin, closing, archiver: true,
                                  prenom: d.prenom, nom: d.nom, societe: d.societe, email: d.email,
                                  formation: d.formation, echeance: d.echeance, description: description(d), nature: d.nature,
                                  montant: d.montant, validite: d.validite, note: d.note, fileName, pdfBase64 }) });
