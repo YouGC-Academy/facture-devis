@@ -34,7 +34,10 @@
   input:focus,select:focus{outline:2px solid var(--accent);outline-offset:1px}
   .amount{font-size:19px;font-weight:600}
   .hint{font-size:12px;color:var(--muted);margin-top:3px}
-  .only-devis,.only-facture{display:none}
+  .only-devis,.only-facture,.only-fac,.si-du{display:none}
+  body[data-mode="facture"] .only-fac{display:block}
+  body[data-mode="facture"].solde-du .si-du{display:block}
+  body[data-mode="facture"].solde-du .si-reglee{display:none !important}
   .n-formation,.n-accord,.n-ech{display:none}
   body[data-nature="vente"] .n-formation{display:block}
   body[data-nature="vente"] .n-ech, body[data-nature="accord"] .n-ech{display:block}
@@ -48,6 +51,17 @@
   body[data-mode="recu"] .n-libelle{display:block !important}
   .tabs button{font-size:13px}
   .only-societe{display:none}
+  body[data-mode="recu"] .plan-zone, body[data-mode="devis"] .plan-zone, body[data-nature="autre"] .plan-zone{display:none !important}
+  .tabs{flex-wrap:wrap}
+  .tabs button{flex:1 1 45%}
+  .plan-zone{background:var(--soft);border-radius:10px;padding:10px 12px}
+  .plan-row{display:grid;grid-template-columns:28px 1fr 1fr auto auto;gap:6px;align-items:center;margin-top:6px;font-size:13px}
+  .plan-row input{padding:6px 8px}
+  .plan-row .del{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:16px}
+  .mini{margin-top:8px;padding:6px 10px;border:1px dashed var(--accent);border-radius:8px;background:transparent;color:var(--accent);font:600 12px system-ui;cursor:pointer}
+  #doc .plan{margin:0 0 14px}
+  #doc .plan table{margin-top:6px;width:auto;min-width:60%}
+  #doc .plan td,#doc .plan th{padding:4px 18px 4px 0;font-size:11px}
   body[data-mode="recu"] .no-recu{display:none}
   body.societe .only-societe{display:block}
   body.societe .star-pers{display:none}
@@ -115,6 +129,7 @@
     <div class="tabs" role="group" aria-label="Type de document">
       <button type="button" data-set="devis" aria-pressed="false">Devis</button>
       <button type="button" data-set="facture" aria-pressed="true">Facture (réglée)</button>
+      <button type="button" data-set="solde" aria-pressed="false">Solde dû (recouvrement)</button>
       <button type="button" data-set="recu" aria-pressed="false">Reçu de remboursement</button>
     </div>
 
@@ -157,6 +172,28 @@
             </select>
           </div>
           <div class="full n-formation"><label for="formation">Formation *</label><select id="formation"></select></div>
+          <div class="full plan-zone">
+            <label for="planN">Plan de paiement</label>
+            <div style="display:grid;grid-template-columns:1.3fr 1fr;gap:8px">
+              <select id="planN">
+                <option value="1">1 fois — sans frais</option>
+                <option value="2">2 fois — frais 1 %</option>
+                <option value="3">3 fois — frais 2 %</option>
+                <option value="4">4 fois — frais 3 %</option>
+                <option value="6">6 fois — frais 3,5 %</option>
+                <option value="8">8 fois — frais 4 %</option>
+                <option value="perso">Personnalisé (accord, plan sur mesure)</option>
+              </select>
+              <input id="planBase" inputmode="decimal" placeholder="Prix de base (€)">
+            </div>
+            <div class="hint" id="planResume"></div>
+            <div id="planLignes"></div>
+            <button type="button" id="planAjout" class="mini" style="display:none">+ Ajouter une échéance</button>
+            <div id="planFactureeZone" style="display:none;margin-top:8px">
+              <label for="planFacturee">Cette facture correspond à l'échéance</label>
+              <select id="planFacturee"></select>
+            </div>
+          </div>
           <div class="full n-libelle"><label for="libelle" id="libelleLabel">Libellé imprimé sur le document *</label>
             <input id="libelle" autocomplete="off" placeholder="ex. Frais de dossier">
             <div class="hint" id="libelleHint">Proposé automatiquement, modifiable librement.</div>
@@ -176,8 +213,18 @@
           </div>
           <div><label for="date">Date du document *</label><input id="date" type="date"></div>
           <div class="only-devis"><label for="validite">Valable jusqu'au *</label><input id="validite" type="date"></div>
-          <div class="only-facture"><label for="datePaiement" id="datePaiementLabel">Réglée le *</label><input id="datePaiement" type="date"></div>
-          <div class="only-facture"><label for="modePaiement">Mode de règlement *</label>
+          <div class="full" style="display:none"><label for="statutFacture">Statut de la facture *</label>
+            <select id="statutFacture">
+              <option value="reglee">Réglée (facture acquittée)</option>
+              <option value="due">Solde dû (à régler, ex. dossier recouvrement)</option>
+            </select>
+          </div>
+          <div class="si-du"><label for="prixTotal">Prix total de la prestation</label><input id="prixTotal" inputmode="decimal" placeholder="ex. 2 597,00"></div>
+          <div class="si-du"><label for="dejaRegle">Déjà réglé</label><input id="dejaRegle" inputmode="decimal" placeholder="ex. 865,67"></div>
+          <div class="si-du"><label for="echeancePaiement">À régler avant le *</label><input id="echeancePaiement" type="date"></div>
+          <div class="full si-du"><div class="hint">Le montant (solde dû) se calcule tout seul : prix total − déjà réglé. Tu peux le corriger.</div></div>
+          <div class="only-facture si-reglee"><label for="datePaiement" id="datePaiementLabel">Réglée le *</label><input id="datePaiement" type="date"></div>
+          <div class="only-facture si-reglee"><label for="modePaiement">Mode de règlement *</label>
             <select id="modePaiement">
               <option>Virement bancaire</option>
               <option>Carte bancaire</option>
@@ -254,9 +301,12 @@ const FORMATIONS = [
   { label: "YouGC Start", prix: 2597.00 },
   { label: "YouGC Pro",   prix: 2997.00 },
   { label: "YouGC Elite", prix: 3997.00 },
+  { label: "YouGC Elite (offre remisée)", prix: 3697.00 },
   { label: "Avance",      prix: null }
 ];
 const VALIDITE_DEVIS_JOURS = 30;
+// Frais de paiement en plusieurs fois (en %), appliqués au prix de base
+const FRAIS_PLAN = { 1: 0, 2: 1, 3: 2, 4: 3, 6: 3.5, 8: 4 };
 // URLs de PRODUCTION des webhooks n8n : colle-les ici pour ne plus jamais les ressaisir
 const DEFAULT_WEBHOOK = "";        // ex. "https://xxx.app.n8n.cloud/webhook/yougc-numero"
 const DEFAULT_WEBHOOK_ENVOI = "";  // ex. "https://xxx.app.n8n.cloud/webhook/yougc-envoi"
@@ -347,15 +397,23 @@ function data(numero){
     echeance: mode !== "recu" && ["vente","accord"].includes($("nature").value) ? $("echeance").value.trim() : "",
     dateAccord: mode !== "recu" && $("nature").value === "accord" ? $("dateAccord").value : "",
     note: $("note").value.trim(),
+    plan: (mode === "recu" || mode === "devis" || $("nature").value === "autre") ? null : planInfo(),
+    planFacturee: +($("planFacturee").value || 0),
     montant: parseMontant($("montant").value),
     date: $("date").value, validite: $("validite").value,
-    datePaiement: $("datePaiement").value, modePaiement: $("modePaiement").value
+    statutFacture: mode === "facture" ? $("statutFacture").value : "",
+    prixTotal: mode === "facture" && $("statutFacture").value === "due" ? parseMontant($("prixTotal").value) : null,
+    dejaRegle: mode === "facture" && $("statutFacture").value === "due" ? parseMontant($("dejaRegle").value) : null,
+    echeancePaiement: mode === "facture" && $("statutFacture").value === "due" ? $("echeancePaiement").value : "",
+    datePaiement: mode === "facture" && $("statutFacture").value === "due" ? "" : $("datePaiement").value,
+    modePaiement: mode === "facture" && $("statutFacture").value === "due" ? "" : $("modePaiement").value
   };
 }
 
 // Libellé proposé (jamais imposé : celui saisi dans le champ prime toujours)
 function suggestion(d){
   if(d.mode === "recu") return "";
+  if(d.statutFacture === "due") return "Solde restant dû" + (d.nature === "vente" && d.formation ? " — " + d.formation : "");
   if(d.nature === "vente") return d.formation + (d.echeance ? " — Échéance " + d.echeance : "");
   if(d.nature === "accord") return `Mensualité${d.echeance ? " " + d.echeance : ""} — accord amiable${d.dateAccord ? " du " + frDate(d.dateAccord) : ""}`;
   return "";
@@ -385,6 +443,20 @@ function blocTiers(d, titre){
       </div>`;
 }
 
+function blocPlan(d){
+  const p = d.plan;
+  if(!p || p.total == null || (!p.perso && p.rows.length <= 1)) return "";
+  const titre = p.perso ? `Plan de paiement en ${p.rows.length} échéance${p.rows.length > 1 ? "s" : ""}`
+                        : `Paiement en ${p.n} fois — frais de paiement échelonné ${String(p.taux).replace(".", ",")} % (${euro(p.frais)}) inclus`;
+  if(d.mode === "facture" && d.statutFacture !== "due"){
+    return `<p class="plan">Échéance ${d.planFacturee + 1}/${p.rows.length} — ${esc(titre)} — total du plan : <b>${euro(p.total)}</b></p>`;
+  }
+  const statut = d.mode === "facture";
+  const lignes = p.rows.map((r, i) => `<tr><td>Échéance ${i + 1}</td><td>${r.date ? frDate(r.date) : "—"}</td><td class="r">${euro(r.montant || 0)}</td>${statut ? `<td>${r.reglee ? "Réglée" : "À régler"}</td>` : ""}</tr>`).join("");
+  return `<div class="plan"><b>${esc(titre)}</b> — total : <b>${euro(p.total)}</b>
+    <table><thead><tr><th>N°</th><th>Date</th><th class="r">Montant</th>${statut ? "<th>Statut</th>" : ""}</tr></thead><tbody>${lignes}</tbody></table></div>`;
+}
+
 function render(d){
   if(d.mode === "recu") return renderRecu(d);
   const isDevis = d.mode === "devis";
@@ -394,15 +466,29 @@ function render(d){
   const adr = [d.adresse, [d.cp, d.ville].filter(Boolean).join(" ")].filter(Boolean).join(", ");
 
   // Devis : fidèle au devis type (pas d'IBAN, pas de pénalités) + date de validité
+  const du = d.statutFacture === "due";
+  const recapSolde = du && d.prixTotal != null
+    ? `<p style="margin:0 0 6px">Prix total : <b>${euro(d.prixTotal)}</b> — Déjà réglé : <b>${euro(d.dejaRegle || 0)}</b> — <b>Solde restant dû : ${euro(m)}</b></p>` : "";
   const paiement = isDevis
     ? `<p style="margin-top:8px">Devis valable jusqu'au <b>${esc(frDate(d.validite))}</b>.</p>`
-    : `
+    : du ? `
+    <div class="box">
+      <h3>Informations de paiement :</h3>
+      <p><b>À régler avant le ${esc(frDate(d.echeancePaiement))}</b></p>
+      <p><b>Établissement :</b> ${esc(BANQUE.etablissement)}</p>
+      <p><b>IBAN :</b> ${esc(BANQUE.iban)}</p>
+      <p><b>BIC :</b> ${esc(BANQUE.bic)}</p>
+      <p><b>Référence :</b> ${esc(d.numero || "—")}</p>
+      <p>Merci d'indiquer la référence dans le libellé de votre virement.</p>
+    </div>` : `
     <div class="acq">
       <strong>FACTURE ACQUITTÉE</strong><br>
       Réglée le ${esc(frDate(d.datePaiement))} — ${esc(d.modePaiement)}
     </div>`;
   const signature = "";
-  const mentions = isDevis ? [MENTION_TVA] : [MENTION_TVA, ...PENALITES];
+  // L'indemnité forfaitaire de 40 € ne s'applique qu'entre professionnels : affichée seulement pour une société
+  const penalites = PENALITES.filter(t => d.societe || !t.includes("40 €"));
+  const mentions = isDevis ? [MENTION_TVA] : [MENTION_TVA, ...penalites];
 
   $("doc").innerHTML = `
     <img class="logo" src="${LOGO}" alt="YouGC Academy">
@@ -427,10 +513,11 @@ function render(d){
       <thead><tr><th style="width:42%">Description</th><th class="c">Qté</th><th class="r">Prix unitaire</th><th class="r">TVA</th><th class="r">Total</th></tr></thead>
       <tbody>
         <tr><td>${esc(description(d))}</td><td class="c">1</td><td class="r">${euro(m)}</td><td class="r">0 %</td><td class="r">${euro(m)}</td></tr>
-        <tr class="totalrow"><td></td><td></td><td></td><td class="r">Total</td><td class="r total">${euro(m)}</td></tr>
+        <tr class="totalrow"><td></td><td></td><td></td><td class="r">${du ? "Solde dû" : "Total"}</td><td class="r total">${euro(m)}</td></tr>
       </tbody>
     </table>
-    <p class="lettres">Montant en lettres : ${esc(montantEnLettres(m))}</p>
+    <p class="lettres">${recapSolde}Montant en lettres : ${esc(montantEnLettres(m))}</p>
+    ${blocPlan(d)}
     ${paiement}
     ${signature}
     <div class="mentions">
@@ -494,7 +581,12 @@ const refresh = () => { autoLibelle(); render(data("")); fit(); };
 
 /* ---------- Initialisation ---------- */
 FORMATIONS.forEach((f,i) => { const o = document.createElement("option"); o.value = i; o.textContent = f.label; $("formation").appendChild(o); });
-const setPrix = () => { const p = FORMATIONS[$("formation").value].prix; $("montant").value = p == null ? "" : p.toFixed(2).replace(".", ","); };
+const setPrix = () => {
+  const p = FORMATIONS[$("formation").value].prix;
+  $("montant").value = p == null ? "" : p.toFixed(2).replace(".", ",");
+  $("planBase").value = p == null ? "" : p.toFixed(2).replace(".", ",");
+  if(window.__planPret){ genererLignes(); dessinerLignes(); appliquerPlan(); }
+};
 $("formation").addEventListener("change", () => { if($("nature").value === "vente") setPrix(); refresh(); });
 $("nature").addEventListener("change", () => {
   const n = $("nature").value;
@@ -502,25 +594,136 @@ $("nature").addEventListener("change", () => {
   $("echeanceLabel").textContent = n === "accord" ? "Mensualité (optionnel)" : "Échéance (optionnel)";
   $("echeance").placeholder = n === "accord" ? "ex. 3/6" : "ex. 2/3 — laisser vide si paiement en une fois";
   if(n === "vente") setPrix(); else $("montant").value = "";
+  if(window.__planPret && n === "accord"){ $("planN").value = "perso"; plan.rows = []; $("planBase").value = ""; majPlan(); }
   refresh();
 });
 setPrix();
 const today = new Date().toISOString().slice(0,10);
 $("date").value = today; $("datePaiement").value = today; $("validite").value = isoPlus(today, VALIDITE_DEVIS_JOURS);
-$("date").addEventListener("change", () => { $("validite").value = isoPlus($("date").value, VALIDITE_DEVIS_JOURS); refresh(); });
+$("date").addEventListener("change", () => {
+  $("validite").value = isoPlus($("date").value, VALIDITE_DEVIS_JOURS);
+  if(window.__planPret && $("planN").value !== "perso"){ plan.rows.forEach((r, i) => r.date = ajouterMois($("date").value, i)); dessinerLignes(); }
+  refresh();
+});
 $("montant").addEventListener("blur", e => { const n = parseMontant(e.target.value); if(n !== null) e.target.value = n.toFixed(2).replace(".", ","); refresh(); });
 $("estSociete").addEventListener("change", e => {
   document.body.classList.toggle("societe", e.target.checked);
   document.querySelectorAll(".lbl-contact").forEach((el, i) => el.textContent = e.target.checked ? (i ? "Nom du contact" : "Prénom du contact") : (i ? "Nom" : "Prénom"));
   refresh();
 });
+/* ---------- Plan de paiement ---------- */
+let plan = { rows: [] };
+const r2 = x => Math.round(x * 100) / 100;
+const fmt2 = x => (x == null ? "" : r2(x).toFixed(2).replace(".", ","));
+function ajouterMois(iso, k){
+  const d = new Date((iso || new Date().toISOString().slice(0,10)) + "T12:00:00"), j = d.getDate();
+  d.setMonth(d.getMonth() + k); if(d.getDate() < j) d.setDate(0);
+  return d.toISOString().slice(0, 10);
+}
+function planInfo(){
+  const n = $("planN").value, base = parseMontant($("planBase").value);
+  if(n === "perso"){
+    const total = plan.rows.length ? r2(plan.rows.reduce((s, r) => s + (r.montant || 0), 0)) : null;
+    return { n, perso: true, base, taux: null, frais: null, total, rows: plan.rows };
+  }
+  const k = +n, taux = FRAIS_PLAN[k], total = base != null ? r2(base * (1 + taux / 100)) : null;
+  return { n: k, perso: false, base, taux, frais: total != null ? r2(total - base) : null, total, rows: plan.rows };
+}
+function genererLignes(){
+  const n = $("planN").value, anciennes = plan.rows;
+  if(n === "perso"){ if(!plan.rows.length) plan.rows = [{ montant: null, date: $("date").value, reglee: false }]; return; }
+  const info = planInfo(), k = +n;
+  if(info.total == null){ plan.rows = []; return; }
+  const part = Math.floor(info.total / k * 100) / 100;
+  plan.rows = Array.from({ length: k }, (_, i) => ({
+    montant: i < k - 1 ? part : r2(info.total - part * (k - 1)),
+    date: (anciennes[i] && anciennes.length === k && anciennes[i].date) || ajouterMois($("date").value, i),
+    reglee: !!(anciennes[i] && anciennes.length === k && anciennes[i].reglee)
+  }));
+}
+function dessinerLignes(){
+  const perso = $("planN").value === "perso", fact = document.body.dataset.mode === "facture";
+  $("planAjout").style.display = perso ? "" : "none";
+  const zone = $("planLignes"); zone.innerHTML = "";
+  if(!perso && plan.rows.length <= 1){ majFacturee(); return; }
+  plan.rows.forEach((r, i) => {
+    const row = document.createElement("div"); row.className = "plan-row";
+    row.innerHTML = `<span>${i + 1}.</span>
+      <input class="pm" inputmode="decimal" value="${fmt2(r.montant)}" ${perso ? "" : "readonly"} placeholder="Montant">
+      <input class="pd" type="date" value="${r.date || ""}">
+      <label style="display:${fact ? "flex" : "none"};gap:4px;align-items:center;white-space:nowrap"><input class="pr" type="checkbox" style="width:auto" ${r.reglee ? "checked" : ""}>réglée</label>
+      <button type="button" class="del" title="Supprimer" style="display:${perso ? "" : "none"}">×</button>`;
+    row.querySelector(".pm").addEventListener("change", e => { r.montant = parseMontant(e.target.value); e.target.value = fmt2(r.montant); appliquerPlan(); refresh(); });
+    row.querySelector(".pd").addEventListener("change", e => { r.date = e.target.value; refresh(); });
+    row.querySelector(".pr").addEventListener("change", e => { r.reglee = e.target.checked; appliquerPlan(); refresh(); });
+    row.querySelector(".del").addEventListener("click", () => { plan.rows.splice(i, 1); dessinerLignes(); appliquerPlan(); refresh(); });
+    zone.appendChild(row);
+  });
+  majFacturee();
+}
+function majFacturee(){
+  const n = plan.rows.length, sel = $("planFacturee"), avant = sel.value;
+  const montrer = document.body.dataset.mode === "facture" && $("statutFacture").value !== "due" && n > 1;
+  $("planFactureeZone").style.display = montrer ? "" : "none";
+  sel.innerHTML = plan.rows.map((r, i) => `<option value="${i}">Échéance ${i + 1}/${n} — ${fmt2(r.montant)} €</option>`).join("");
+  if(avant !== "" && +avant < n) sel.value = avant;
+  else { const prochaine = plan.rows.findIndex(r => !r.reglee); sel.value = String(prochaine >= 0 ? prochaine : 0); }
+}
+function appliquerPlan(){
+  const info = planInfo(), mode = document.body.dataset.mode, du = $("statutFacture").value === "due";
+  const nb = info.rows.length;
+  $("planResume").textContent = info.total == null ? "Renseigne le prix de base (ou les échéances) pour calculer le plan."
+    : info.perso ? `Total du plan : ${fmt2(info.total)} € sur ${nb} échéance${nb > 1 ? "s" : ""}.`
+    : `Total : ${fmt2(info.total)} €` + (info.taux ? ` (dont frais ${String(info.taux).replace(".", ",")} % : ${fmt2(info.frais)} €) — ${info.n} × ~${fmt2(info.total / info.n)} €` : "");
+  if(info.total == null || mode === "recu" || mode === "devis" || $("nature").value === "autre") return;
+  if(du){
+    $("prixTotal").value = fmt2(info.total);
+    $("dejaRegle").value = fmt2(info.rows.reduce((s, r) => s + (r.reglee ? (r.montant || 0) : 0), 0));
+    calculerSolde();
+  } else if(nb > 1){
+    const i = Math.min(+($("planFacturee").value || 0), nb - 1);
+    $("montant").value = fmt2(info.rows[i].montant); $("echeance").value = `${i + 1}/${nb}`;
+  } else { $("montant").value = fmt2(info.total); }
+}
+function majPlan(){ genererLignes(); dessinerLignes(); appliquerPlan(); refresh(); }
+$("planN").addEventListener("change", () => { if($("planN").value === "perso") plan.rows = plan.rows.map(r => ({ ...r })); majPlan(); });
+$("planBase").addEventListener("input", majPlan);
+$("planAjout").addEventListener("click", () => {
+  const der = plan.rows[plan.rows.length - 1];
+  plan.rows.push({ montant: der ? der.montant : null, date: ajouterMois(der ? der.date : $("date").value, 1), reglee: false });
+  dessinerLignes(); appliquerPlan(); refresh();
+});
+$("planFacturee").addEventListener("change", () => { appliquerPlan(); refresh(); });
+window.__planPret = true;
+genererLignes(); dessinerLignes(); appliquerPlan();
+
+function calculerSolde(){
+  const t = parseMontant($("prixTotal").value), r = parseMontant($("dejaRegle").value) ?? 0;
+  if(t != null && t - r > 0) $("montant").value = (Math.round((t - r) * 100) / 100).toFixed(2).replace(".", ",");
+}
+$("statutFacture").addEventListener("change", e => {
+  const du = e.target.value === "due";
+  document.body.classList.toggle("solde-du", du);
+  if(du && !$("echeancePaiement").value) $("echeancePaiement").value = isoPlus(new Date().toISOString().slice(0,10), 8);
+  if(du) calculerSolde();
+  dessinerLignes(); appliquerPlan();
+  refresh();
+});
+["prixTotal","dejaRegle"].forEach(id => $(id).addEventListener("input", () => { calculerSolde(); }));
 $("libelle").addEventListener("input", e => { libelleManuel = e.target.value.trim() !== ""; });
 document.querySelectorAll("#f input, #f select").forEach(el => el.addEventListener("input", refresh));
 document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click", () => {
-  document.body.dataset.mode = b.dataset.set;
-  document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-pressed", x === b));
   const t = b.dataset.set;
-  const nom = { devis: "le devis", facture: "la facture", recu: "le reçu" }[t];
+  // « Solde dû » = une facture au statut « solde dû » (même numérotation que les factures)
+  document.body.dataset.mode = t === "solde" ? "facture" : t;
+  document.querySelectorAll(".tabs button").forEach(x => x.setAttribute("aria-pressed", x === b));
+  if(t === "solde" || t === "facture"){
+    $("statutFacture").value = t === "solde" ? "due" : "reglee";
+    document.body.classList.toggle("solde-du", t === "solde");
+    if(t === "solde" && !$("echeancePaiement").value) $("echeancePaiement").value = isoPlus(new Date().toISOString().slice(0,10), 8);
+    $("robin").checked = t === "solde";
+  }
+  const nom = { devis: "le devis", facture: "la facture", solde: "la facture de solde", recu: "le reçu" }[t];
   $("envoiLabel").textContent = `Envoyer ${nom} ${t === "recu" ? "au prestataire" : "au client"} par email`;
   $("go").textContent = `Valider ${nom} et télécharger le PDF`;
   $("legendClient").textContent = t === "recu" ? "Prestataire" : "Client";
@@ -531,6 +734,7 @@ document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click
   $("libelleHint").style.display = t === "recu" ? "none" : "";
   if(t === "recu"){ $("montant").value = ""; if(!libelleManuel) $("libelle").value = ""; }
   else if($("nature").value === "vente") setPrix();
+  if(window.__planPret){ dessinerLignes(); appliquerPlan(); }
   refresh();
 }));
 $("hook").value = store.get("yougc_hook") || DEFAULT_WEBHOOK;
@@ -631,7 +835,7 @@ function status(msg, cls){ $("status").textContent = msg; $("status").className 
 $("f").addEventListener("submit", async e => {
   e.preventDefault();
   const d = data("");
-  const req = ["email","date"].concat(d.mode === "devis" ? ["validite"] : ["datePaiement"])
+  const req = ["email","date"].concat(d.mode === "devis" ? ["validite"] : d.statutFacture === "due" ? ["echeancePaiement"] : ["datePaiement"])
     .concat(d.estSociete ? ["societe"] : ["prenom","nom"]);
   const miss = req.filter(id => !$(id).value.trim());
   if(!description(d) || description(d) === "Libellé à renseigner") miss.push("libelle");
@@ -698,7 +902,7 @@ $("f").addEventListener("submit", async e => {
           body: JSON.stringify({ cle: $("cle").value.trim(), mode: d.mode, numero, pageId, envoyerClient: envoi, robin, closing, archiver: true,
                                  prenom: d.prenom, nom: d.nom, societe: d.societe, email: d.email,
                                  formation: d.formation, echeance: d.echeance, description: description(d), nature: d.nature,
-                                 montant: d.montant, validite: d.validite, note: d.note, fileName, pdfBase64 }) });
+                                 montant: d.montant, validite: d.validite, note: d.note, statutFacture: d.statutFacture, fileName, pdfBase64 }) });
         if(!r2.ok) throw new Error("n8n a répondu " + r2.status);
         status(libelle + " téléchargé(e). Fait : " + cibles + ".", "ok");
       }catch(err){
