@@ -236,7 +236,7 @@
       </fieldset>
 
       <label style="display:flex;gap:8px;align-items:center;margin:0 0 12px;font-size:14px">
-        <input type="checkbox" id="envoi" checked style="width:auto">
+        <input type="checkbox" id="envoi" style="width:auto">
         <span id="envoiLabel">Envoyer la facture au client par email</span>
       </label>
       <label class="only-devis" style="margin:0 0 12px;font-size:14px">
@@ -297,12 +297,17 @@ const NATURES = {
   rembourse: "Remboursement prestataire",
   autre: "Autre"
 };
+// Grilles officielles YouGC : mensualité totale (frais inclus) selon le nombre de fois
 const FORMATIONS = [
-  { label: "YouGC Start", prix: 2597.00 },
-  { label: "YouGC Pro",   prix: 2997.00 },
-  { label: "YouGC Elite", prix: 3997.00 },
-  { label: "YouGC Elite (offre remisée)", prix: 3697.00 },
-  { label: "Avance",      prix: null }
+  { label: "YouGC Start",                         prix: 2597, grille: { 1: 2597.00, 2: 1311.49, 3: 882.98,  4: 668.73,  6: 447.98, 8: 337.62 } },
+  { label: "YouGC Start — avance déduite",        prix: 2297, grille: { 1: 2297.00, 2: 1159.99, 3: 780.98,  4: 591.48,  6: 396.23, 8: 298.62 } },
+  { label: "YouGC Pro",                           prix: 2997, grille: { 1: 2997.00, 2: 1513.49, 3: 1018.98, 4: 771.73,  6: 516.98, 8: 389.61 } },
+  { label: "YouGC Pro — avance déduite",          prix: 2697, grille: { 1: 2697.00, 2: 1361.99, 3: 916.98,  4: 694.48,  6: 465.23, 8: 350.62 } },
+  { label: "YouGC Elite",                         prix: 3997, grille: { 1: 3997.00, 2: 2018.49, 3: 1358.98, 4: 1029.23, 6: 689.49, 8: 519.62 } },
+  { label: "YouGC Elite — avance déduite",        prix: 3697, grille: { 1: 3697.00, 2: 1866.99, 3: 1256.98, 4: 951.98,  6: 637.74, 8: 480.62 } },
+  { label: "YouGC Elite FOMO",                    prix: 3697, grille: { 1: 3697.00, 2: 1866.99, 3: 1256.98, 4: 951.98,  6: 637.74, 8: 480.62 } },
+  { label: "YouGC Elite FOMO — avance déduite",   prix: 3397, grille: { 1: 3397.00, 2: 1715.49, 3: 1154.98, 4: 874.73,  6: 585.98, 8: 441.61 } },
+  { label: "Avance",                              prix: null }
 ];
 const VALIDITE_DEVIS_JOURS = 30;
 // Frais de paiement en plusieurs fois (en %), appliqués au prix de base
@@ -626,17 +631,23 @@ function planInfo(){
     const total = plan.rows.length ? r2(plan.rows.reduce((s, r) => s + (r.montant || 0), 0)) : null;
     return { n, perso: true, base, taux: null, frais: null, total, rows: plan.rows };
   }
-  const k = +n, taux = FRAIS_PLAN[k], total = base != null ? r2(base * (1 + taux / 100)) : null;
-  return { n: k, perso: false, base, taux, frais: total != null ? r2(total - base) : null, total, rows: plan.rows };
+  // Mensualité = (prix ÷ nb de fois, arrondi au centime supérieur) + frais ; total = nb × mensualité
+  const k = +n, taux = FRAIS_PLAN[k];
+  // 1) grille officielle de l'offre si le prix de base n'a pas été modifié ; 2) sinon calcul (arrondi au centime sup. puis frais)
+  const f = FORMATIONS[$("formation").value];
+  const grille = $("nature").value === "vente" && f && f.grille && base === f.prix ? f.grille[k] : null;
+  const mensualite = grille != null ? grille
+    : base != null ? r2(Math.ceil(Math.round(base / k * 1e6) / 1e4) / 100 * (1 + taux / 100)) : null;
+  const total = mensualite != null ? r2(mensualite * k) : null;
+  return { n: k, perso: false, base, taux, mensualite, frais: total != null ? r2(total - base) : null, total, rows: plan.rows };
 }
 function genererLignes(){
   const n = $("planN").value, anciennes = plan.rows;
   if(n === "perso"){ if(!plan.rows.length) plan.rows = [{ montant: null, date: $("date").value, reglee: false }]; return; }
   const info = planInfo(), k = +n;
   if(info.total == null){ plan.rows = []; return; }
-  const part = Math.floor(info.total / k * 100) / 100;
   plan.rows = Array.from({ length: k }, (_, i) => ({
-    montant: i < k - 1 ? part : r2(info.total - part * (k - 1)),
+    montant: info.mensualite,
     date: (anciennes[i] && anciennes.length === k && anciennes[i].date) || ajouterMois($("date").value, i),
     reglee: !!(anciennes[i] && anciennes.length === k && anciennes[i].reglee)
   }));
@@ -674,7 +685,7 @@ function appliquerPlan(){
   const nb = info.rows.length;
   $("planResume").textContent = info.total == null ? "Renseigne le prix de base (ou les échéances) pour calculer le plan."
     : info.perso ? `Total du plan : ${fmt2(info.total)} € sur ${nb} échéance${nb > 1 ? "s" : ""}.`
-    : `Total : ${fmt2(info.total)} €` + (info.taux ? ` (dont frais ${String(info.taux).replace(".", ",")} % : ${fmt2(info.frais)} €) — ${info.n} × ~${fmt2(info.total / info.n)} €` : "");
+    : `Total : ${fmt2(info.total)} €` + (info.taux ? ` (dont frais ${String(info.taux).replace(".", ",")} % : ${fmt2(info.frais)} €) — ${info.n} × ${fmt2(info.mensualite)} €` : "");
   if(info.total == null || mode === "recu" || mode === "devis" || $("nature").value === "autre") return;
   if(du){
     $("prixTotal").value = fmt2(info.total);
