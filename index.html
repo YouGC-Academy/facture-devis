@@ -60,6 +60,21 @@
   .plan-row .del{border:0;background:transparent;color:var(--muted);cursor:pointer;font-size:16px}
   .mini{margin-top:8px;padding:6px 10px;border:1px dashed var(--accent);border-radius:8px;background:transparent;color:var(--accent);font:600 12px system-ui;cursor:pointer}
   #doc .plan{margin:0 0 14px}
+  #doc .bas{display:flex;gap:22px;align-items:flex-start}
+  #doc .bas > *{flex:1;min-width:0}
+  #doc .bas .box{width:auto}
+  #doc .bas .plan table{min-width:0;width:100%}
+  /* Mode compact : appliqué automatiquement si le document dépasse une page A4 */
+  #doc.compact{padding-top:36px}
+  #doc.compact .head{margin-top:36px}
+  #doc.compact .parties{margin-top:22px}
+  #doc.compact .parties h2{font-size:22px;margin-bottom:10px}
+  #doc.compact .parties p{margin-bottom:6px}
+  #doc.compact table{margin-top:18px}
+  #doc.compact td{padding:9px 0}
+  #doc.compact .lettres{margin:12px 0}
+  #doc.compact .box{padding:10px 12px}
+  #doc.compact .box h3{font-size:14px;margin-bottom:6px}
   #doc .plan table{margin-top:6px;width:auto;min-width:60%}
   #doc .plan td,#doc .plan th{padding:4px 18px 4px 0;font-size:11px}
   body[data-mode="recu"] .no-recu{display:none}
@@ -186,6 +201,7 @@
               </select>
               <input id="planBase" inputmode="decimal" placeholder="Prix de base (€)">
             </div>
+            <div style="margin-top:8px"><label for="planDebut">Date de la 1re échéance</label><input id="planDebut" type="date"></div>
             <div class="hint" id="planResume"></div>
             <div id="planLignes"></div>
             <button type="button" id="planAjout" class="mini" style="display:none">+ Ajouter une échéance</button>
@@ -522,8 +538,7 @@ function render(d){
       </tbody>
     </table>
     <p class="lettres">${recapSolde}Montant en lettres : ${esc(montantEnLettres(m))}</p>
-    ${blocPlan(d)}
-    ${paiement}
+    ${blocPlan(d) && !isDevis && d.statutFacture === "due" ? `<div class="bas">${blocPlan(d)}${paiement}</div>` : blocPlan(d) + paiement}
     ${signature}
     <div class="mentions">
       ${mentions.map(p => `<p>${esc(p)}</p>`).join("")}
@@ -582,7 +597,13 @@ function fit(){
   wrap.style.width = (794 * s) + "px";
   wrap.style.margin = "0 auto";
 }
-const refresh = () => { autoLibelle(); render(data("")); fit(); };
+function ajusterPage(){
+  const doc = $("doc"), prev = doc.style.transform;
+  doc.classList.remove("compact"); doc.style.transform = "none"; doc.style.minHeight = "0";
+  if(doc.scrollHeight > 1123) doc.classList.add("compact");
+  doc.style.minHeight = ""; doc.style.transform = prev;
+}
+const refresh = () => { autoLibelle(); render(data("")); ajusterPage(); fit(); };
 
 /* ---------- Initialisation ---------- */
 FORMATIONS.forEach((f,i) => { const o = document.createElement("option"); o.value = i; o.textContent = f.label; $("formation").appendChild(o); });
@@ -604,10 +625,10 @@ $("nature").addEventListener("change", () => {
 });
 setPrix();
 const today = new Date().toISOString().slice(0,10);
-$("date").value = today; $("datePaiement").value = today; $("validite").value = isoPlus(today, VALIDITE_DEVIS_JOURS);
+$("date").value = today; $("datePaiement").value = today; $("planDebut").value = today; $("validite").value = isoPlus(today, VALIDITE_DEVIS_JOURS);
 $("date").addEventListener("change", () => {
   $("validite").value = isoPlus($("date").value, VALIDITE_DEVIS_JOURS);
-  if(window.__planPret && $("planN").value !== "perso"){ plan.rows.forEach((r, i) => r.date = ajouterMois($("date").value, i)); dessinerLignes(); }
+  if(window.__planPret && !$("planDebut").value){ plan.rows.forEach((r, i) => r.date = ajouterMois($("date").value, i)); dessinerLignes(); }
   refresh();
 });
 $("montant").addEventListener("blur", e => { const n = parseMontant(e.target.value); if(n !== null) e.target.value = n.toFixed(2).replace(".", ","); refresh(); });
@@ -643,12 +664,12 @@ function planInfo(){
 }
 function genererLignes(){
   const n = $("planN").value, anciennes = plan.rows;
-  if(n === "perso"){ if(!plan.rows.length) plan.rows = [{ montant: null, date: $("date").value, reglee: false }]; return; }
+  if(n === "perso"){ if(!plan.rows.length) plan.rows = [{ montant: null, date: $("planDebut").value || $("date").value, reglee: false }]; return; }
   const info = planInfo(), k = +n;
   if(info.total == null){ plan.rows = []; return; }
   plan.rows = Array.from({ length: k }, (_, i) => ({
     montant: info.mensualite,
-    date: (anciennes[i] && anciennes.length === k && anciennes[i].date) || ajouterMois($("date").value, i),
+    date: (anciennes[i] && anciennes.length === k && anciennes[i].date) || ajouterMois($("planDebut").value || $("date").value, i),
     reglee: !!(anciennes[i] && anciennes.length === k && anciennes[i].reglee)
   }));
 }
@@ -699,6 +720,11 @@ function appliquerPlan(){
 function majPlan(){ genererLignes(); dessinerLignes(); appliquerPlan(); refresh(); }
 $("planN").addEventListener("change", () => { if($("planN").value === "perso") plan.rows = plan.rows.map(r => ({ ...r })); majPlan(); });
 $("planBase").addEventListener("input", majPlan);
+$("planDebut").addEventListener("change", () => {
+  const d0 = $("planDebut").value || $("date").value;
+  plan.rows.forEach((r, i) => r.date = ajouterMois(d0, i));
+  dessinerLignes(); refresh();
+});
 $("planAjout").addEventListener("click", () => {
   const der = plan.rows[plan.rows.length - 1];
   plan.rows.push({ montant: der ? der.montant : null, date: ajouterMois(der ? der.date : $("date").value, 1), reglee: false });
@@ -882,7 +908,7 @@ $("f").addEventListener("submit", async e => {
   }
 
   status(force ? "Re-génération du N° " + numero + "…" : "N° " + numero + " enregistré dans Notion. Génération du PDF…");
-  render(data(numero));
+  render(data(numero)); ajusterPage();
   const doc = $("doc"), prev = doc.style.transform, scrollPos = window.scrollY;
   window.scrollTo(0, 0);
   doc.style.transform = "none";
