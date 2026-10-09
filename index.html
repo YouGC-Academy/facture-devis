@@ -48,6 +48,7 @@
   body[data-mode="recu"] .n-libelle{display:block !important}
   .tabs button{font-size:13px}
   .only-societe{display:none}
+  body[data-mode="recu"] .no-recu{display:none}
   body.societe .only-societe{display:block}
   body.societe .star-pers{display:none}
   body[data-mode="recu"] .star-adr{display:none}
@@ -165,6 +166,10 @@
         <input type="checkbox" id="envoi" checked style="width:auto">
         <span id="envoiLabel">Envoyer la facture au client par email</span>
       </label>
+      <label class="no-recu" style="display:flex;gap:8px;align-items:center;margin:0 0 12px;font-size:14px">
+        <input type="checkbox" id="robin" style="width:auto">
+        <span>Dossier Robin : poster le PDF dans Slack #team-finances</span>
+      </label>
       <button class="go" id="go" type="submit">Valider et télécharger le PDF</button>
       <div id="status" role="status"></div>
     </form>
@@ -197,7 +202,7 @@ const LOGO = "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAARcAAAA8CAYAAABMz/6V
 const EMETTEUR = {
   nom: "YouGC Academy",
   email: "hello@yougcacademy.com",
-  adresse: "50 RUE DES ENVIERGES 75020 PARIS",     // ⚠ à compléter : code postal + ville
+  adresse: "50 rue des Envierges, 75020 Paris",
   siret: "92524245500010"
 };
 const BANQUE = { etablissement: "SHINE", iban: "FR76 1741 8000 0100 0117 5080 153", bic: "SNNNFR22XXX" };
@@ -520,8 +525,8 @@ $("f").addEventListener("submit", async e => {
   const hook = $("hook").value.trim();
   if(!force && !hook){ status("Renseigne l'URL du webhook dans Réglages.", "err"); document.querySelector("details").open = true; return; }
 
-  const envoi = $("envoi").checked, hookEnvoi = $("hookEnvoi").value.trim();
-  if(envoi && !hookEnvoi){ status("Renseigne l'URL du webhook d'envoi dans Réglages, ou décoche l'envoi.", "err"); document.querySelector("details").open = true; return; }
+  const envoi = $("envoi").checked, robin = d.mode !== "recu" && $("robin").checked, hookEnvoi = $("hookEnvoi").value.trim();
+  if((envoi || robin) && !hookEnvoi){ status("Renseigne l'URL du webhook d'envoi dans Réglages, ou décoche l'envoi et Robin.", "err"); document.querySelector("details").open = true; return; }
 
   $("go").disabled = true;
   let numero = force, pageId = "";
@@ -555,16 +560,19 @@ $("f").addEventListener("submit", async e => {
     document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(a.href), 10000);
     const libelle = ({ devis: "Devis ", facture: "Facture ", recu: "Reçu " }[d.mode]) + numero;
 
-    if(!envoi){ status(libelle + " téléchargé(e). Non envoyé(e) au client.", "ok"); }
+    if(!envoi && !robin){ status(libelle + " téléchargé(e). Non envoyé(e).", "ok"); }
     else{
-      status(libelle + " téléchargé(e). Envoi à " + d.email + "…");
+      const cibles = [envoi ? d.email : "", robin ? "Slack #team-finances" : ""].filter(Boolean).join(" + ");
+      status(libelle + " téléchargé(e). Envoi à " + cibles + "…");
       const pdfBase64 = await new Promise((ok, ko) => { const fr = new FileReader(); fr.onload = () => ok(String(fr.result).split(",")[1]); fr.onerror = ko; fr.readAsDataURL(blob); });
       try{
         const r2 = await fetch(hookEnvoi, { method:"POST", headers:{ "Content-Type":"application/json" },
-          body: JSON.stringify({ cle: $("cle").value.trim(), mode: d.mode, numero, pageId, prenom: d.prenom, nom: d.nom, email: d.email,
-                                 formation: d.formation, echeance: d.echeance, description: description(d), nature: d.nature, montant: d.montant, validite: d.validite, fileName, pdfBase64 }) });
+          body: JSON.stringify({ cle: $("cle").value.trim(), mode: d.mode, numero, pageId, envoyerClient: envoi, robin,
+                                 prenom: d.prenom, nom: d.nom, societe: d.societe, email: d.email,
+                                 formation: d.formation, echeance: d.echeance, description: description(d), nature: d.nature,
+                                 montant: d.montant, validite: d.validite, note: d.note, fileName, pdfBase64 }) });
         if(!r2.ok) throw new Error("n8n a répondu " + r2.status);
-        status(libelle + " téléchargé(e) et envoyé(e) à " + d.email + ".", "ok");
+        status(libelle + " téléchargé(e) et envoyé(e) : " + cibles + ".", "ok");
       }catch(err){
         status(libelle + " téléchargé(e), mais l'envoi a échoué (" + err.message + "). Envoie le PDF manuellement.", "err");
       }
