@@ -84,6 +84,34 @@
   .go{width:100%;padding:13px;border:0;border-radius:10px;background:var(--accent);color:var(--accent-ink);font:600 15px system-ui;cursor:pointer}
   .go:disabled{opacity:.55;cursor:wait}
   #status{margin-top:12px;font-size:14px;min-height:20px}
+  #verrou{position:fixed;inset:0;z-index:60;background:var(--bg);display:none;align-items:center;justify-content:center;padding:16px}
+  body.verrouille #verrou{display:flex}
+  #verrou .vbox{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:22px;max-width:360px;width:100%}
+  #verrou h2{margin:0 0 6px;font-size:19px} #verrou p{color:var(--muted);font-size:14px;margin:0 0 12px}
+  .refaire{margin-top:16px;font-size:13px;color:var(--muted)}
+  #changerCle{color:var(--muted)}
+  #fermerApercu{display:none;float:right;border:0;background:transparent;color:var(--ink);font:600 14px system-ui;cursor:pointer}
+  .barre-mobile{display:none}
+  @media (max-width:760px){
+    body{font-size:16px}
+    .wrap{padding:14px 12px 96px;gap:0}
+    h1{font-size:19px}
+    form{padding:14px}
+    input,select,textarea{font-size:16px}            /* évite le zoom automatique sur iPhone */
+    .grid{grid-template-columns:1fr}
+    .tabs button{flex:1 1 45%;padding:10px 6px}
+    #go{display:none}                                 /* remplacé par la barre du bas */
+    #colApercu{display:none}
+    body.voir-apercu #colApercu{display:block;position:fixed;inset:0;z-index:40;background:var(--bg);overflow:auto;padding:12px}
+    body.voir-apercu #fermerApercu{display:inline-block}
+    .barre-mobile{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:45;gap:8px;padding:10px 12px calc(10px + env(safe-area-inset-bottom));background:var(--card);border-top:1px solid var(--line)}
+    .barre-mobile button{flex:1;padding:13px;border-radius:10px;font:600 15px system-ui;cursor:pointer}
+    #mApercu{border:1px solid var(--line);background:transparent;color:var(--ink)}
+    #mGo{border:0;background:var(--accent);color:var(--accent-ink);flex:2}
+    .plan-row{grid-template-columns:22px 1fr 1fr;row-gap:4px}
+    .plan-row label,.plan-row .del{grid-column:2 / span 2}
+    #confirm .btns{flex-direction:column-reverse}
+  }
   #confirm{position:fixed;inset:0;background:rgba(20,12,16,.55);display:none;align-items:center;justify-content:center;padding:16px;z-index:50}
   #confirm.open{display:flex}
   #confirm .box{background:var(--card);color:var(--ink);border-radius:16px;max-width:440px;width:100%;padding:22px;box-shadow:0 20px 50px rgba(0,0,0,.25)}
@@ -138,6 +166,18 @@
 </style>
 </head>
 <body data-mode="facture" data-nature="vente">
+<div id="verrou">
+  <div class="vbox">
+    <h2>Devis &amp; factures YouGC</h2>
+    <p>Saisis le code d'accès (une seule fois sur cet appareil).</p>
+    <input id="verrouCle" type="password" autocomplete="off" placeholder="Code d'accès">
+    <button type="button" id="verrouOk" class="go" style="margin-top:12px">Entrer</button>
+  </div>
+</div>
+<div class="barre-mobile">
+  <button type="button" id="mApercu">Aperçu</button>
+  <button type="button" id="mGo">Valider</button>
+</div>
 <div class="wrap">
   <div>
     <h1>Devis &amp; factures YouGC</h1>
@@ -268,26 +308,18 @@
       <button type="button" id="partager" style="display:none;margin-top:10px;width:100%;padding:11px;border:1px solid var(--accent);border-radius:10px;background:transparent;color:var(--accent);font:600 14px system-ui;cursor:pointer">Partager le PDF (Slack, WhatsApp, mail…)</button>
     </form>
 
-    <details>
-      <summary>Réglages</summary>
-      <label for="hook" style="margin-top:10px">URL du webhook n8n (production)</label>
-      <input id="hook" placeholder="https://…/webhook/yougc-numero">
-      <div class="hint">Mémorisée dans ce navigateur. Le webhook attribue le numéro et crée la ligne dans Notion.</div>
-      <label for="hookEnvoi" style="margin-top:12px">URL du webhook d'envoi email (production)</label>
-      <input id="hookEnvoi" placeholder="https://…/webhook/yougc-envoi">
-      <label for="hookContact" style="margin-top:12px">URL du webhook recherche contact Systeme.io</label>
-      <input id="hookContact" placeholder="https://…/webhook/yougc-contact">
-      <label for="cle" style="margin-top:12px">Clé d'accès</label>
-      <input id="cle" type="password" placeholder="la même que dans n8n" autocomplete="off">
-      <div class="hint">Mémorisée dans ce navigateur. Sans elle, n8n refuse de créer un numéro.</div>
-      <label for="forceNum" style="margin-top:12px">Re-générer un document existant (n° déjà dans Notion)</label>
-      <input id="forceNum" placeholder="ex. 2026-10-71 — laisser vide normalement">
-      <div class="hint">Rempli : aucun nouveau numéro n'est créé, le PDF est refait avec ce numéro.</div>
+    <!-- Paramètres techniques (plus de Réglages visibles) -->
+    <input type="hidden" id="hook"><input type="hidden" id="hookEnvoi"><input type="hidden" id="hookContact"><input type="hidden" id="cle">
+    <details class="refaire">
+      <summary>Refaire un document déjà numéroté</summary>
+      <input id="forceNum" placeholder="ex. 2026-10-71" autocomplete="off" style="margin-top:8px">
+      <div class="hint">Rempli : aucun nouveau numéro n'est créé, le PDF est refait avec ce numéro. Pense à le vider ensuite.</div>
     </details>
+    <p class="hint" style="margin-top:14px"><a href="#" id="changerCle">Changer le code d'accès</a></p>
   </div>
 
-  <div>
-    <p class="previewlabel">Aperçu</p>
+  <div id="colApercu">
+    <p class="previewlabel">Aperçu <button type="button" id="fermerApercu">Fermer ✕</button></p>
     <div class="previewbox" id="pbox"><div id="docfit"><div id="doc"></div></div></div>
   </div>
 </div>
@@ -591,6 +623,7 @@ function renderRecu(d){
 /* Aperçu à l'échelle */
 function fit(){
   const box = $("pbox"), doc = $("doc"), wrap = $("docfit");
+  if(box.clientWidth < 80) return;                     // aperçu caché (téléphone)
   const s = Math.min(1, (box.clientWidth - 36) / 794);
   doc.style.transform = `scale(${s})`;
   wrap.style.height = (doc.offsetHeight * s) + "px";
@@ -774,12 +807,9 @@ document.querySelectorAll(".tabs button").forEach(b => b.addEventListener("click
   if(window.__planPret){ dessinerLignes(); appliquerPlan(); }
   refresh();
 }));
-$("hook").value = store.get("yougc_hook") || DEFAULT_WEBHOOK;
-$("hook").addEventListener("input", e => store.set("yougc_hook", e.target.value.trim()));
-$("hookEnvoi").value = store.get("yougc_hook_envoi") || DEFAULT_WEBHOOK_ENVOI;
-$("hookEnvoi").addEventListener("input", e => store.set("yougc_hook_envoi", e.target.value.trim()));
-$("hookContact").value = store.get("yougc_hook_contact") || DEFAULT_WEBHOOK_CONTACT;
-$("hookContact").addEventListener("input", e => store.set("yougc_hook_contact", e.target.value.trim()));
+$("hook").value = DEFAULT_WEBHOOK;
+$("hookEnvoi").value = DEFAULT_WEBHOOK_ENVOI;
+$("hookContact").value = DEFAULT_WEBHOOK_CONTACT;
 
 /* Lit la réponse n8n ; si elle est vide, c'est que le workflow s'est arrêté avant son bloc « Répondre » */
 async function lireJson(r, nomWorkflow){
@@ -804,7 +834,7 @@ async function chercherClient(){
   const dire = (m, c) => { out.textContent = m; out.className = "hint " + (c || ""); };
   $("resultats").innerHTML = "";
   if(q.length < 2) return dire("Tape au moins 2 caractères.", "err");
-  if(!hook){ document.querySelector("details").open = true; return dire("Renseigne l'URL du webhook recherche contact dans Réglages.", "err"); }
+  if(!hook) return dire("URL du webhook de recherche manquante dans le code (DEFAULT_WEBHOOK_CONTACT).", "err");
   $("chercher").disabled = true; dire("Recherche…");
   try{
     const r = await fetch(hook, { method:"POST", headers:{ "Content-Type":"application/json" }, body: JSON.stringify({ cle: $("cle").value.trim(), q }) });
@@ -825,8 +855,21 @@ async function chercherClient(){
 }
 $("chercher").addEventListener("click", chercherClient);
 $("recherche").addEventListener("keydown", e => { if(e.key === "Enter"){ e.preventDefault(); chercherClient(); } });
+/* ---------- Code d'accès : demandé une fois par appareil ---------- */
 $("cle").value = store.get("yougc_cle") || "";
-$("cle").addEventListener("input", e => store.set("yougc_cle", e.target.value.trim()));
+if(!$("cle").value) document.body.classList.add("verrouille");
+function validerCle(){
+  const v = $("verrouCle").value.trim(); if(!v) return;
+  store.set("yougc_cle", v); $("cle").value = v; document.body.classList.remove("verrouille");
+}
+$("verrouOk").addEventListener("click", validerCle);
+$("verrouCle").addEventListener("keydown", e => { if(e.key === "Enter") validerCle(); });
+$("changerCle").addEventListener("click", e => { e.preventDefault(); $("verrouCle").value = ""; document.body.classList.add("verrouille"); $("verrouCle").focus(); });
+
+/* ---------- Vue téléphone : aperçu en plein écran + barre du bas ---------- */
+$("mApercu").addEventListener("click", () => { document.body.classList.add("voir-apercu"); fit(); });
+$("fermerApercu").addEventListener("click", () => document.body.classList.remove("voir-apercu"));
+$("mGo").addEventListener("click", () => $("f").requestSubmit());
 window.addEventListener("resize", fit);
 refresh();
 
@@ -867,7 +910,10 @@ $("partager").addEventListener("click", async () => {
 });
 
 /* ---------- Validation, numéro, PDF ---------- */
-function status(msg, cls){ $("status").textContent = msg; $("status").className = cls || ""; }
+function status(msg, cls){
+  $("status").textContent = msg; $("status").className = cls || "";
+  if(window.matchMedia("(max-width:760px)").matches) $("status").scrollIntoView({ block: "center", behavior: "smooth" });
+}
 
 $("f").addEventListener("submit", async e => {
   e.preventDefault();
@@ -881,11 +927,11 @@ $("f").addEventListener("submit", async e => {
   if(d.montant === null){ status("Montant non reconnu. Formats acceptés : 865,67 — 1 297,50 — 2597. Évite « 1.297 » (ambigu) et plus de 2 décimales.", "err"); $("montant").focus(); return; }
   const force = $("forceNum").value.trim();
   const hook = $("hook").value.trim();
-  if(!force && !hook){ status("Renseigne l'URL du webhook dans Réglages.", "err"); document.querySelector("details").open = true; return; }
+  if(!force && !hook){ status("URL du webhook manquante dans le code (DEFAULT_WEBHOOK).", "err"); return; }
 
   let envoi = $("envoi").checked, robin = d.mode !== "recu" && $("robin").checked, closing = d.mode === "devis" && $("closing").checked;
   const hookEnvoi = $("hookEnvoi").value.trim();
-  if((envoi || robin || closing) && !hookEnvoi){ status("Renseigne l'URL du webhook d'envoi dans Réglages, ou décoche l'envoi et Robin.", "err"); document.querySelector("details").open = true; return; }
+  if((envoi || robin || closing) && !hookEnvoi){ status("URL du webhook d'envoi manquante dans le code (DEFAULT_WEBHOOK_ENVOI) : décoche les envois.", "err"); return; }
   if(envoi || robin || closing){
     const choix = await confirmer(d, envoi, robin, closing);
     if(!choix){ status("Envoi annulé : rien n'a été créé. Modifie puis valide à nouveau."); return; }
